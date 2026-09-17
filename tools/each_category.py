@@ -1,19 +1,38 @@
+"""按类别统计 IoU 的评估脚本。
+
+用法：
+    python tools/each_category.py --dataset rrsisd --split test \
+        --resume outputs/checkpoints/model_best_pvlmamba.pth
+
+类别由数据集的 target_cls 定义，样本类别从指代文本中匹配得到。
+本脚本不含任何硬编码路径。
+"""
+
+import datetime
+import json
+import os
+import re
+import sys
+import time
+import random
+
+# 允许从 tools/ 目录直接运行：把仓库根目录加入模块搜索路径
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+import numpy as np
 import torch
 import torch.utils.data
-import utils
-import numpy as np
-import transforms as T
-import random
-from bert.modeling_bert import BertModel
-import re
-import os
-os.environ["KMP_DUPLICATE_LIB_OK"]="TRUE"
-import time
-import datetime
-# from lib import segmentation
-from lib_RMSIN import segmentation
 
-def seed_everything(seed=567):
+import transforms as T
+import utils
+from bert.modeling_bert import BertModel
+from data import build_dataset
+from lib import segmentation
+
+os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
+
+
+def seed_everything(seed=0):
     random.seed(seed)
     os.environ['PYTHONHASHSEED'] = str(seed)
     np.random.seed(seed)
@@ -24,24 +43,14 @@ def seed_everything(seed=567):
     torch.backends.cudnn.deterministic = True
 
 def get_dataset(image_set, transform, args):
-    if args.dataset == "rrsisd":
-        from data.rrsisd import ReferDataset
-    else:
-        from data.refsegrs import ReferDataset
-    ds = ReferDataset(args,
-                      split=image_set,
-                      image_transforms=transform,
-                      target_transforms=None,
-                      eval_mode=False)
+    ds = build_dataset(args.dataset, image_set, transform, args, eval_mode=True)
     return ds, ds.target_cls
 
 def extract_target_class_from_text(refer_text, target_cls_set):
-    """从指代文本中匹配类别：优先匹配tree，再匹配其他类别"""
+    """从指代文本中匹配语义类别（优先匹配更长的类别名，避免短名误命中）。"""
     refer_text_lower = refer_text.lower().strip()
     sorted_cls = sorted(target_cls_set, key=lambda x: len(x), reverse=True)
     for cls in sorted_cls:
-        if cls.lower() == "tree":  # 已在第一步处理，此处跳过
-            continue
         pattern = r'\b' + re.escape(cls.lower()) + r'\b'
         if re.search(pattern, refer_text_lower):
             return cls
@@ -176,17 +185,19 @@ def get_transform(args):
 
 def main(args):
     device = torch.device(args.device)
-    dataset_test, target_cls_set = get_dataset('test', get_transform(args), args)
+    dataset_test, target_cls_set = get_dataset(args.split, get_transform(args), args)
     print(f"Evaluating on {len(target_cls_set)} semantic classes: {sorted(target_cls_set)}")
-    
+
     test_sampler = torch.utils.data.SequentialSampler(dataset_test)
     data_loader_test = torch.utils.data.DataLoader(
         dataset_test, batch_size=1, sampler=test_sampler, num_workers=args.workers
     )
 
     print(f"Loading Model: {args.model}")
-    
+
     single_model = segmentation.__dict__[args.model](pretrained=args.pretrained_swin_weights, args=args)
+    if not args.resume or not os.path.isfile(args.resume):
+        raise SystemExit(f'请通过 --resume 指定已训练好的权重文件（当前为：{args.resume!r}）')
     checkpoint = torch.load(args.resume, map_location='cpu')
     single_model.load_state_dict(checkpoint['model'], strict=False)
     model = single_model.to(device)
@@ -196,15 +207,16 @@ def main(args):
         single_bert_model = BertModel.from_pretrained(args.ck_bert)
         if args.ddp_trained_weights:
             single_bert_model.pooler = None
-        single_bert_model.load_state_dict(checkpoint['bert_model'])
+        if 'bert_model' in checkpoint:
+            single_bert_model.load_state_dict(checkpoint['bert_model'])
         bert_model = single_bert_model.to(device)
 
     evaluate(model, data_loader_test, bert_model, device, target_cls_set)
 
 if __name__ == "__main__":
     from args import get_parser
-    seed_everything()
     parser = get_parser()
     args = parser.parse_args()
+    seed_everything(args.seed)
     print(f'Image Size: {args.img_size}x{args.img_size}')
     main(args)

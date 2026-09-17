@@ -1,15 +1,39 @@
+# ------------------------------------------------------------------ #
+# 基础依赖
+# ------------------------------------------------------------------ #
+torch
+torchvision
+numpy
+Pillow
+opencv-python
+timm
+einops
+
+# COCO RLE 标注解码（缺失时 data/base.py 会回落到内置的纯 numpy 实现）
+pycocotools
+
+# 文本编码器与工具
+tokenizers
+ftfy
+regex
 requests
 filelock
 tqdm
-timm
-mmcv-full==1.3.12
-mmsegmentation==0.17.0
-ftfy
-regex
+
+# 指标与图像处理
 scipy
 scikit-image
-pycocotools==2.0.2
-opencv-python==4.5.3.56
-tokenizers==0.8.1rc1
-h5py
-mamba-ssm 
+
+# ------------------------------------------------------------------ #
+# MambaVision 骨干 / Mamba 解码器所需的 CUDA 算子
+# 需要与本机 CUDA 版本匹配，编译较慢
+# ------------------------------------------------------------------ #
+mamba-ssm
+causal-conv1d
+
+# ------------------------------------------------------------------ #
+# 可选依赖
+# ------------------------------------------------------------------ #
+# mmengine            # 仅在加载 Swin 预训练权重（lavt 分支）时需要
+# swanlab             # 实验跟踪：--log_backend swanlab
+# wandb               # 实验跟踪：--log_backend wandb

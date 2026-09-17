@@ -1,0 +1,51 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# Virtual environments
+venv/
+.venv/
+env/
+ENV/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Model weights & checkpoints
+*.pth
+*.pth.tar
+*.pt
+*.ckpt
+*.bin
+*.safetensors
+pretrained_weights/
+checkpoints/
+outputs/
+
+# Logs & experiment tracking
+*.log
+log/
+logs/
+runs/
+swanlog/
+wandb/
+tensorboard/
+
+# Data (fetch separately, see README)
+data/RefSegRS/
+data/RRSIS-D/
+datasets/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp

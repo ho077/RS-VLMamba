@@ -1,36 +1,43 @@
+"""预测结果可视化脚本。
+
+用法：
+    python tools/Visual.py --dataset rrsisd --split test \
+        --resume outputs/checkpoints/model_best_pvlmamba.pth \
+        --visual_dir outputs/visual
+
+输出：每个样本一张热力图、一张热力图叠加图，以及对应的指代文本 txt。
+本脚本不含任何硬编码路径，输出目录由 --visual_dir 指定。
+"""
+
+import datetime
+import os
+import sys
+import time
+import random
+
+# 允许从 tools/ 目录直接运行：把仓库根目录加入模块搜索路径
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 import cv2
+import numpy as np
 import torch
 import torch.utils.data
-import utils
-import numpy as np
-import transforms as T
 from torchvision.transforms import functional as F
-import random
+
+import transforms as T
+import utils
 from bert.modeling_bert import BertModel
+from data import build_dataset
+from lib import segmentation
 
-from model import segmentation
+os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
 
-import os
-os.environ["KMP_DUPLICATE_LIB_OK"]="TRUE"
-
-import time
-import datetime
 
 def get_dataset(image_set, transform, args):
-    if args.dataset == "rrsisd":
-        from data.rrsisd import ReferDataset
-    else:
-        from data.refsegrs import ReferDataset
-    ds = ReferDataset(args,
-                      split=image_set,
-                      image_transforms=transform,
-                      target_transforms=None,
-                      eval_mode=False
-                      )
-    num_classes = 2
-    return ds, num_classes
+    ds = build_dataset(args.dataset, image_set, transform, args, eval_mode=True)
+    return ds, 2
 
-def evaluate(model, data_loader, bert_model, device):
+def evaluate(model, data_loader, bert_model, device, save_dir):
     model.eval()
     metric_logger = utils.MetricLogger(delimiter="  ")
 
@@ -41,8 +48,8 @@ def evaluate(model, data_loader, bert_model, device):
     seg_total = 0
     mean_IoU = []
     header = 'Test:'
-    save_dir = ""
 
+    os.makedirs(save_dir, exist_ok=True)
     start_time = time.time()
 
     with torch.no_grad():
@@ -230,13 +237,15 @@ def save_pred_targ_results(output_mask, target, image, output_prob, save_path, n
 
 def main(args):
     device = torch.device(args.device)
-    dataset_test, _ = get_dataset('test', get_transform(args=args), args)
+    dataset_test, _ = get_dataset(args.split, get_transform(args=args), args)
 
     test_sampler = torch.utils.data.SequentialSampler(dataset_test)
     data_loader_test = torch.utils.data.DataLoader(dataset_test, batch_size=1,
                                                    sampler=test_sampler, num_workers=args.workers)
     print(args.model)
-    single_model = segmentation.__dict__[args.model](pretrained=args.pretrained_swin_weights,args=args)
+    single_model = segmentation.__dict__[args.model](pretrained=args.pretrained_swin_weights, args=args)
+    if not args.resume or not os.path.isfile(args.resume):
+        raise SystemExit(f'请通过 --resume 指定已训练好的权重文件（当前为：{args.resume!r}）')
     checkpoint = torch.load(args.resume, map_location='cpu')
     single_model.load_state_dict(checkpoint['model'], strict=False)
     model = single_model.to(device)
@@ -246,12 +255,13 @@ def main(args):
         single_bert_model = model_class.from_pretrained(args.ck_bert)
         if args.ddp_trained_weights:
             single_bert_model.pooler = None
-        single_bert_model.load_state_dict(checkpoint['bert_model'])
+        if 'bert_model' in checkpoint:
+            single_bert_model.load_state_dict(checkpoint['bert_model'])
         bert_model = single_bert_model.to(device)
     else:
         bert_model = None
 
-    evaluate(model, data_loader_test, bert_model, device=device)
+    evaluate(model, data_loader_test, bert_model, device, args.visual_dir)
 
 if __name__ == "__main__":
     from args import get_parser

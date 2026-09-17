@@ -221,5 +221,5 @@ def init_distributed_mode(args):
 
     if args.output_dir:
         mkdir(args.output_dir)
-    if args.model_id:
-        mkdir(os.path.join('./models/', args.model_id))
+    if getattr(args, 'model_id', None):
+        mkdir(os.path.join(args.output_dir, args.model_id))
